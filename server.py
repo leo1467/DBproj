@@ -3,11 +3,15 @@
 #程式碼是從這邊修改的 https://gist.github.com/mdonkers/63e115cc0c79b4f6b8b3a6b797e485c7
 #原本是空白的http server，改寫do_GET區塊加入自定義頁面
 
+from sys import argv as argv
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 from urllib.parse import parse_qs
 import sqlite3
 
+import matplotlib.pyplot as plt #畫圖表用，直接matplot畫好圖，包成base64傳出去
+import io
+import base64
 
 dbPath = "db/data.sqlite"
 
@@ -38,27 +42,32 @@ class Server(BaseHTTPRequestHandler):
         
         subPage = ""
         if path == '/1':
-            #這邊要填訂單狀況查詢的結果
+            #訂單狀況查詢
             f = open('subpage1.html', encoding='UTF-8')
             subPage = f.read()
             f.close()
         elif path == '/2':
-            # f = open('subpage2.html', encoding='UTF-8')
-            # subPage = f.read()
-            # f.close()
-            subPage = "銷售額查詢 頁面未建立"
+            #銷售額查詢
+            f = open('subpage2.html', encoding='UTF-8')
+            subPage = f.read()
+            f.close()
         elif path == '/3':
+            #客戶別銷售排名查詢
             f = open('subpage3.html', encoding='UTF-8')
             subPage = f.read()
             f.close()
             # subPage = "客戶別銷售排名查詢 頁面未建立"
         elif path == '/4':
+            #產品別銷量查詢
             f = open('subpage4.html', encoding='UTF-8')
             subPage = f.read()
             f.close()
             # subPage = "產品別銷量查詢 頁面未建立"
         elif path == '/5':
-            subPage = "地區別銷量查詢 頁面未建立"
+            #地區別銷量查詢
+            f = open('subpage5.html', encoding='UTF-8')
+            subPage = f.read()
+            f.close()
         elif path == '/action1':
             #訂單查詢，回傳結果
             qArgs = parse_qs(getPath.query)
@@ -73,8 +82,9 @@ class Server(BaseHTTPRequestHandler):
                 WHERE orders.orderNumber='%s'
                 AND orders.orderNumber = orderdetails.orderNumber
                 """ % (order_no)
-                print(sqlstr)
+                #print(sqlstr)
                 res = c.execute(sqlstr)
+                conn.commit()
                 subPage = "<table>"
                 
                 subPage += "<tr>"
@@ -90,8 +100,49 @@ class Server(BaseHTTPRequestHandler):
                 
                 subPage += "</table>"
                 
-                print(subPage)
+                #print(subPage)
+                
+                conn.close()
+        elif path == '/action2':
+            #訂單查詢，回傳結果
+            qArgs = parse_qs(getPath.query)
+            print(qArgs)
+            if "year" in qArgs:
+                year = qArgs["year"][0]
+                conn = sqlite3.connect(dbPath)
+                c = conn.cursor()
+                sqlstr = """
+                SELECT strftime("%%m", orders.orderDate) as 'month',
+                CAST(SUM(orderdetails.priceEach * orderdetails.quantityOrdered) as INT) as Income
+                FROM orders, orderdetails
+                WHERE orders.orderNumber = orderdetails.orderNumber
+                AND strftime("%%Y", orders.orderDate) = '%s'
+                GROUP BY strftime("%%m", orders.orderDate)
+                ORDER BY 'month' ASC
+                """ % (year)
+                res = c.execute(sqlstr)
                 conn.commit()
+                
+                x = []
+                y = []
+                for row in res:
+                    x.append(row[0])
+                    y.append(row[1] / 1000)
+                plt.figure(figsize=(12,8))
+                plt.title("%s year" % year)
+                plt.plot(x, y, label="Income(thousand)")
+                plt.xlabel('Month')
+                plt.legend()
+                #plt.show()
+                #plt 轉 base64 參照 https://stackoverflow.com/questions/38061267/matplotlib-graphic-image-to-base64
+                pic_IObytes = io.BytesIO()
+                plt.savefig(pic_IObytes,  format='jpg')
+                pic_IObytes.seek(0)
+                pic_hash = base64.b64encode(pic_IObytes.read()).decode("utf-8").replace("\n", "")
+                
+                
+                subPage = "<img src=\"data:image/jpeg;base64, " + str(pic_hash) + "\" />"
+                
                 conn.close()
         elif path == '/action3':
             qArgs = parse_qs(getPath.query)
@@ -113,6 +164,7 @@ class Server(BaseHTTPRequestHandler):
                 print(sqlstr)
                 
                 res = c.execute(sqlstr)
+                conn.commit()
                 subPage = "<table>"
                 subPage += "<tr>"
                 subPage += "<th>金額排名</th> <th>公司名稱</th> <th>顧客編號</th> <th>總金額</th>"
@@ -130,7 +182,6 @@ class Server(BaseHTTPRequestHandler):
                 subPage += "</table>"
                 
                 print(subPage)
-                conn.commit()
                 conn.close()
         elif path == '/action4':
             qArgs = parse_qs(getPath.query)
@@ -149,6 +200,7 @@ class Server(BaseHTTPRequestHandler):
                 print(sqlstr)
                 
                 res = c.execute(sqlstr)
+                conn.commit()
                 subPage = "<table>"
                 subPage += "<tr>"
                 subPage += "<th>數量排名</th> <th>產品編號</th> <th>產品名稱</th> <th>銷售量</th>"
@@ -164,7 +216,6 @@ class Server(BaseHTTPRequestHandler):
                 subPage += "</table>"
                 
                 print(subPage)
-                conn.commit()
                 conn.close()
                 
         
@@ -185,16 +236,14 @@ def run(server_class=HTTPServer, handler_class=Server, port=80):
     server_address = ('', port)
     httpd = server_class(server_address, handler_class)
     try:
-        httpd.serve_forever()
         print("Start server")
+        httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     httpd.server_close()
     print('Stop server')
 
 if __name__ == '__main__':
-    from sys import argv
-
     if len(argv) == 2:
         run(port=int(argv[1]))
     else:
