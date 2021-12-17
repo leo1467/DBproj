@@ -64,7 +64,7 @@ class Server(BaseHTTPRequestHandler):
             f.close()
             # subPage = "產品別銷量查詢 頁面未建立"
         elif path == '/5':
-            #地區別銷量查詢
+            #國家別銷量查詢
             f = open('subpage5.html', encoding='UTF-8')
             subPage = f.read()
             f.close()
@@ -192,7 +192,8 @@ class Server(BaseHTTPRequestHandler):
                 conn = sqlite3.connect(dbPath)
                 c = conn.cursor()
                 sqlstr = """ 
-                SELECT RANK() over(ORDER BY SUM(orderdetails.quantityOrdered) DESC), orderdetails.productCode, products.productName , SUM(orderdetails.quantityOrdered) AS productAmount
+                SELECT RANK() 
+                over(ORDER BY SUM(orderdetails.quantityOrdered) DESC), orderdetails.productCode, products.productName , SUM(orderdetails.quantityOrdered) AS productAmount
                 FROM orders JOIN orderdetails, products
                 WHERE orders.orderDate >= '%s' AND orders.orderDate <= '%s' AND orders.orderNumber = orderdetails.orderNumber AND products.productCode = orderdetails.productCode
                 GROUP BY orderdetails.productCode
@@ -217,8 +218,44 @@ class Server(BaseHTTPRequestHandler):
                 
                 print(subPage)
                 conn.close()
-                
-        
+        elif path == '/action5':
+            qArgs = parse_qs(getPath.query)
+            print(qArgs)
+            if "start_date" in qArgs and "end_date" in qArgs:
+                start_date = qArgs["start_date"][0]
+                end_date = qArgs["end_date"][0]
+                conn = sqlite3.connect(dbPath)
+                c = conn.cursor()
+                sqlstr = """ 
+                SELECT RANK() 
+                over(ORDER BY SUM(orderdetails.quantityOrdered) DESC) AS CountrySalesRank, customers.country, SUM(orderdetails.quantityOrdered) AS productAmount
+                FROM orders 
+                LEFT JOIN orderdetails ON orders.orderNumber = orderdetails.orderNumber
+                LEFT JOIN customers ON orders.customerNumber = customers.customerNumber
+                WHERE orders.orderDate >= '%s' AND orders.orderDate <= '%s'
+                GROUP BY customers.country;
+                """ % (start_date, end_date)
+                print(sqlstr)
+
+                res = c.execute(sqlstr)
+                conn.commit()
+                subPage = "<table>"
+                subPage += "<tr>"
+                subPage += "<th>國家銷售量排名</th> <th>國家名稱</th> <th>總銷售量</th>"
+                subPage += "</tr>"
+                for row in res:
+                    subPage += "<tr>"
+                    for tar in row:
+                        subPage += "<td>"
+                        subPage += str(tar)
+                        subPage += "</td>"
+                    subPage += "</tr>"
+
+                subPage += "</table>"
+
+                print(subPage)
+                conn.close()
+
         page = page.replace("%sub_page%", subPage)
 
         
